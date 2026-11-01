@@ -1,0 +1,11 @@
+# What the cloud build (EAS) leaves out when it uploads the project.
+# IMPORTANT: when this file exists, EAS uses it INSTEAD of .gitignore. That is deliberate:
+# .gitignore lists ".env", and the build NEEDS .env (your EXPO_PUBLIC_ settings: API keys, recall address, sign-in code address).
+node_modules/
+.expo/
+dist/
+web-build/
+.wrangler/
+workers/
+*.log
+.DS_Store

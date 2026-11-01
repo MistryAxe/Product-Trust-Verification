@@ -1,0 +1,276 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function hasCurrentUserProfile() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function currentUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function activeAccount() {
+      return hasCurrentUserProfile() && currentUser().get('accountStatus', 'active') == 'active';
+    }
+
+    function isAdmin() {
+      return activeAccount() && currentUser().get('role', '') == 'admin';
+    }
+
+    function isManufacturer() {
+      return activeAccount() && currentUser().get('role', '') == 'manufacturer';
+    }
+
+    function isCustomer() {
+      return activeAccount() && (currentUser().get('role', '') == 'customer' || currentUser().get('role', '') == 'consumer');
+    }
+
+    function publicSignupRole() {
+      return request.resource.data.role == 'customer' || request.resource.data.role == 'manufacturer';
+    }
+
+    match /users/{userId} {
+      // Public registration can create Customer or Manufacturer accounts only.
+      // Existing administrators can also create profiles for accounts they add.
+      // The self-registration branch is evaluated first so a brand-new account
+      // does not need an existing users/{uid} profile just to create one.
+      allow create: if (
+        signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && publicSignupRole()
+      ) || isAdmin();
+
+      // Canonical profiles use the Firebase Auth UID as the document id. The
+      // uid/email checks let older installations repair only the signed-in
+      // person's own legacy profile; admins can still list all users.
+      allow read: if signedIn() && (
+        request.auth.uid == userId
+        || resource.data.get('uid', '') == request.auth.uid
+        || (request.auth.token.get('email', '') != '' && resource.data.get('email', '') == request.auth.token.get('email', ''))
+        || isAdmin()
+      );
+
+      // A user can edit only normal profile/preferences. Identity and role are
+      // immutable from the user's own client session. Admins manage role/status.
+      allow update: if signedIn() && (
+        isAdmin() ||
+        (request.auth.uid == userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'fullName', 'organizationName', 'allergens', 'customAllergens',
+            'dietaryPreferences', 'noKnownAllergies', 'allergyProfileComplete',
+            'allergyProfileSkippedAt', 'notificationsEnabled', 'locationEnabled', 'updatedAt'
+          ]))
+      );
+      // A customer or manufacturer may delete their own account record (used by in-app account deletion).
+      // Administrators are removed by another administrator, never by themselves.
+      allow delete: if isAdmin() || (signedIn() && request.auth.uid == userId && (isCustomer() || isManufacturer()));
+
+      match /scans/{scanId} {
+        allow read, create, update, delete: if isCustomer() && request.auth.uid == userId;
+      }
+
+      match /savedProducts/{savedId} {
+        allow read, create, update, delete: if isCustomer() && request.auth.uid == userId;
+      }
+
+      match /ingredientScans/{scanId} {
+        allow read, create, update, delete: if isCustomer() && request.auth.uid == userId;
+      }
+    }
+
+    // A manufacturer's public brand card (name and logo). Any signed-in account
+    // can read it so customers see the logo; only the owner (or an admin) writes it.
+    match /manufacturerBrands/{brandId} {
+      allow read: if activeAccount();
+      allow create, update: if ((isManufacturer() && brandId == request.auth.uid) || isAdmin())
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'logoDataUri', 'updatedAt'])
+        && request.resource.data.logoDataUri is string
+        && request.resource.data.logoDataUri.size() < 200000;
+      allow delete: if isAdmin() || (isManufacturer() && brandId == request.auth.uid);
+    }
+
+    // One-time sign-in codes. Only the server functions touch these: no app user can read or write them.
+    match /loginCodes/{uid} {
+      allow read, write: if false;
+    }
+
+    match /products/{productId} {
+      allow read: if activeAccount();
+      allow create: if isAdmin() || (isManufacturer() && request.resource.data.manufacturerId == request.auth.uid);
+      allow update: if isAdmin() || (isManufacturer()
+        && resource.data.manufacturerId == request.auth.uid
+        && request.resource.data.manufacturerId == request.auth.uid);
+      allow delete: if isAdmin() || (isManufacturer() && resource.data.manufacturerId == request.auth.uid);
+    }
+
+    match /batches/{batchId} {
+      allow read: if activeAccount();
+      allow create: if isAdmin() || (isManufacturer() && request.resource.data.manufacturerId == request.auth.uid);
+      allow update: if isAdmin() || (isManufacturer()
+        && resource.data.manufacturerId == request.auth.uid
+        && request.resource.data.manufacturerId == request.auth.uid);
+      allow delete: if isAdmin() || (isManufacturer() && resource.data.manufacturerId == request.auth.uid);
+    }
+
+    match /recalls/{recallId} {
+      allow read: if activeAccount();
+      allow create: if isAdmin() || (isManufacturer() && request.resource.data.manufacturerId == request.auth.uid);
+      allow update: if isAdmin() || (isManufacturer()
+        && resource.data.manufacturerId == request.auth.uid
+        && request.resource.data.manufacturerId == request.auth.uid);
+      allow delete: if isAdmin() || (isManufacturer() && resource.data.manufacturerId == request.auth.uid);
+    }
+
+    match /serials/{serialId} {
+      allow read: if activeAccount();
+      allow create: if isAdmin() || (isManufacturer() && request.resource.data.manufacturerId == request.auth.uid);
+      allow update: if isAdmin() || (isManufacturer()
+        && resource.data.manufacturerId == request.auth.uid
+        && request.resource.data.manufacturerId == request.auth.uid);
+      allow delete: if isAdmin() || (isManufacturer() && resource.data.manufacturerId == request.auth.uid);
+    }
+
+    // A manufacturer may answer a case about its own product. It can change only
+    // the response fields, never the status, the reporter's text or the evidence.
+    function manufacturerRespondingOnly() {
+      return isManufacturer()
+        && resource.data.manufacturerId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['manufacturerResponse', 'manufacturerResponseAt', 'updatedAt'])
+        && request.resource.data.manufacturerResponse is string
+        && request.resource.data.manufacturerResponse.size() <= 2000;
+    }
+
+    match /reports/{reportId} {
+      allow create: if isAdmin() || (isCustomer() && request.resource.data.reporterId == request.auth.uid);
+      allow read: if signedIn() && (
+        resource.data.reporterId == request.auth.uid ||
+        isAdmin() ||
+        (isManufacturer() && resource.data.manufacturerId == request.auth.uid)
+      );
+      // The reporter may detach their own identity (account deletion). Nothing else changes.
+      allow update: if (signedIn()
+          && resource.data.reporterId == request.auth.uid
+          && request.resource.data.reporterId == ''
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['reporterId', 'reporterDeleted', 'evidenceCount', 'evidenceUrls', 'evidenceRemoved', 'updatedAt']))
+        // A manufacturer deleting its account detaches itself from reports about its products.
+        || (signedIn()
+          && resource.data.manufacturerId == request.auth.uid
+          && request.resource.data.manufacturerId == ''
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['manufacturerId', 'manufacturerDeleted', 'updatedAt'])) || isAdmin() || manufacturerRespondingOnly();
+      allow delete: if isAdmin();
+
+      // The customer's exact position. Only the reporter and an admin can read it; a manufacturer cannot.
+      match /private/{recordId} {
+        allow create: if signedIn()
+          && request.resource.data.reporterId == request.auth.uid
+          && request.resource.data.reportId == reportId
+          && getAfter(/databases/$(database)/documents/reports/$(reportId)).data.reporterId == request.auth.uid;
+        allow read: if signedIn() && (resource.data.reporterId == request.auth.uid || isAdmin());
+        allow update: if false;
+        allow delete: if (signedIn() && get(/databases/$(database)/documents/reports/$(reportId)).data.reporterId == request.auth.uid) || isAdmin();
+      }
+
+      // Photos attached to a report. Stored as small compressed images so the
+      // feature works on the free Spark plan (no Firebase Storage needed).
+      match /evidence/{evidenceId} {
+        // Kept to a single lookup (getAfter) because a report with several
+        // photos is one batched write and Firestore caps lookups per batch.
+        // The parent report can only be created by an active customer, so
+        // matching its reporterId is what ties a photo to a legitimate report.
+        allow create: if signedIn()
+          && request.resource.data.reporterId == request.auth.uid
+          && request.resource.data.reportId == reportId
+          && getAfter(/databases/$(database)/documents/reports/$(reportId)).data.reporterId == request.auth.uid
+          && request.resource.data.dataUri is string
+          && request.resource.data.dataUri.size() < 800000;
+        allow read: if signedIn() && (
+          get(/databases/$(database)/documents/reports/$(reportId)).data.reporterId == request.auth.uid ||
+          isAdmin() ||
+          (isManufacturer() && get(/databases/$(database)/documents/reports/$(reportId)).data.manufacturerId == request.auth.uid)
+        );
+        allow update: if false;
+        allow delete: if (signedIn() && get(/databases/$(database)/documents/reports/$(reportId)).data.reporterId == request.auth.uid) || isAdmin();
+      }
+    }
+
+    match /investigations/{investigationId} {
+      allow create: if isAdmin() || (isCustomer()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.reportId == investigationId
+        && getAfter(/databases/$(database)/documents/reports/$(investigationId)).data.reporterId == request.auth.uid);
+      allow read: if isAdmin() || (isManufacturer() && resource.data.manufacturerId == request.auth.uid);
+      // The reporter may detach their own identity (account deletion). Nothing else changes.
+      allow update: if (signedIn()
+          && resource.data.reporterId == request.auth.uid
+          && request.resource.data.reporterId == ''
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['reporterId', 'reporterDeleted', 'evidenceCount', 'evidenceUrls', 'evidenceRemoved', 'updatedAt']))
+        // A manufacturer deleting its account detaches itself from reports about its products.
+        || (signedIn()
+          && resource.data.manufacturerId == request.auth.uid
+          && request.resource.data.manufacturerId == ''
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['manufacturerId', 'manufacturerDeleted', 'updatedAt'])) || isAdmin() || manufacturerRespondingOnly();
+      allow delete: if isAdmin();
+    }
+
+    match /publicReports/{reportId} {
+      allow read: if isAdmin()
+        || isCustomer()
+        || (isManufacturer() && resource.data.manufacturerId == request.auth.uid);
+      allow create: if activeAccount()
+        && getAfter(/databases/$(database)/documents/reports/$(reportId)).data.reporterId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+
+
+    // Manual Verified by GS1 trust layer. Customers/manufacturers can request
+    // that a GTIN be reviewed, but only admins can write the actual GS1 result.
+    match /gtinReviewRequests/{barcode} {
+      allow create: if activeAccount()
+        && request.resource.data.barcode == barcode
+        && request.resource.data.status == 'pending';
+      allow read: if isAdmin();
+      allow update: if isAdmin() || (activeAccount()
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'pending'
+        && request.resource.data.barcode == barcode
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'productName', 'brand', 'sourceType', 'requestCount', 'lastRequestedAt'
+        ]));
+      allow delete: if isAdmin();
+    }
+
+    match /gtinVerifications/{barcode} {
+      allow read: if activeAccount();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Global scan events support real manufacturer/admin analytics without
+    // reading another customer's private scan-history subcollection.
+    match /scanEvents/{scanId} {
+      allow create: if isCustomer() && request.resource.data.scannerId == request.auth.uid;
+      allow read: if signedIn() && (
+        isAdmin() ||
+        resource.data.scannerId == request.auth.uid ||
+        (isManufacturer() && resource.data.manufacturerId == request.auth.uid)
+      );
+      // A customer can enrich the same scan event after running deeper checks.
+      // They cannot take ownership of another user's event.
+      allow update: if isAdmin() || (
+        isCustomer()
+        && resource.data.scannerId == request.auth.uid
+        && request.resource.data.scannerId == request.auth.uid
+      );
+      allow delete: if isAdmin() || (isCustomer() && resource.data.scannerId == request.auth.uid);
+    }
+  }
+}

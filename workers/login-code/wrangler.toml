@@ -1,0 +1,16 @@
+name = "product-trust-login-code"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+
+[vars]
+# Your Firebase project id (Firebase console > Project settings).
+FIREBASE_PROJECT_ID = "product-trust-verification"
+# The email address the codes are sent FROM. In Brevo, verify this exact address first.
+SENDER_EMAIL = "setshedio348@gmail.com"
+SENDER_NAME = "Product Trust & Verification"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "product-trust-login"
+# Paste the id printed by:  npx wrangler d1 create product-trust-login
+database_id = "ae7af4cd-b83f-4483-975c-a768d9982e02"

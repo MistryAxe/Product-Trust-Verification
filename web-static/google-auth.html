@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Product Trust: Google sign-in</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #0B1A0E; color: #F2F7F0; font-family: -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif; }
+  main { max-width: 360px; padding: 28px; text-align: center; }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  p { color: #A9B5A5; line-height: 1.5; margin: 0; }
+  .spin { width: 34px; height: 34px; margin: 0 auto 18px; border: 4px solid #1D3A22; border-top-color: #7BE04A; border-radius: 50%; animation: s 0.9s linear infinite; }
+  @keyframes s { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<main>
+  <div class="spin" id="spin"></div>
+  <h1>Product Trust</h1>
+  <p id="msg">Starting Google sign-in…</p>
+</main>
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+  import { getAuth, getRedirectResult, signInWithRedirect, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+  import config from './google-auth-config.js';
+  import { run } from './google-auth.js';
+
+  const msg = document.getElementById('msg');
+  const show = (text) => { msg.textContent = text; if (/not valid|cancelled|could not|did not/i.test(text)) document.getElementById('spin').style.display = 'none'; };
+
+  // The sign-in must run on the same address as Firebase's sign-in handler, or strict browsers lose the result.
+  // If this page was opened on the other Firebase address, move to the right one first.
+  if (location.hostname !== config.authDomain && /\.(web\.app|firebaseapp\.com)$/.test(location.hostname)) {
+    location.replace(`https://${config.authDomain}${location.pathname}${location.search}`);
+  } else {
+    const app = initializeApp(config);
+    const auth = getAuth(app);
+    let session = window.sessionStorage;
+    try { session.setItem('pt_probe', '1'); session.removeItem('pt_probe'); } catch (_) {
+      const mem = new Map(); session = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v), removeItem: (k) => mem.delete(k) };
+    }
+    run({ search: location.search, auth, api: { getRedirectResult, signInWithRedirect, GoogleAuthProvider }, session, replace: (url) => location.replace(url), show })
+      .catch(() => show('Google sign-in could not be completed. You can close this window and try again.'));
+  }
+</script>
+</body>
+</html>

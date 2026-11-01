@@ -1,0 +1,8 @@
+# Product Trust: free recall lookup service (Cloudflare Worker).
+# No database and no secrets are needed. It asks public recall lists and answers in one simple format.
+name = "product-trust-recall-lookup"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+
+# Optional (only if the US food list ever says "rate limit reached"): get a free key at
+# https://open.fda.gov/apis/authentication/ and store it with:  npx wrangler secret put OPENFDA_API_KEY

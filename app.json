@@ -1,0 +1,74 @@
+{
+  "expo": {
+    "name": "Product Trust & Verification",
+    "slug": "product-trust-verification",
+    "version": "20.22.3",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Product Trust uses the camera to scan product barcodes and to photograph labels.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Product Trust uses your location only if you choose to show a report on the Safety Map or to see reports near you.",
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Product Trust uses your photos so you can attach evidence to a report or add a company logo.",
+          "cameraPermission": "Product Trust uses the camera to photograph products and evidence for your report.",
+          "microphonePermission": false
+        }
+      ]
+    ],
+    "android": {
+      "permissions": [
+        "CAMERA",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
+      "package": "com.producttrust.verification",
+      "versionCode": 229,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0D5C1A"
+      }
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.producttrust.verification",
+      "buildNumber": "20.22.3"
+    },
+    "scheme": "producttrust",
+    "owner": "ofentse1805",
+    "extra": {
+      "eas": {
+        "projectId": "441ab981-356f-474d-896c-c3f02bde032f"
+      }
+    },
+    "icon": "./assets/icon.png",
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/441ab981-356f-474d-896c-c3f02bde032f",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    }
+  }
+}
